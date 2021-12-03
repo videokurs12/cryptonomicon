@@ -381,4 +381,5 @@ export default {
   background-color: #7da0b1 !important;
   cursor: none;
 }
+
 </style>
