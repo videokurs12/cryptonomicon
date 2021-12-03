@@ -65,12 +65,22 @@
       <hr class="w-full border-t border-gray-600 my-4" />
       <template v-if="tickers.length">
         <div>
-          <button class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-          @click="page = page - 1"
-          >Назад</button>
-          <button class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-          @click="page = page + 1"
-          >Вперед</button>
+          <button
+            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            @click="page = page - 1"
+            :disabled="page <= 1"
+            :class="{ disabled: page <= 1 }"
+          >
+            Назад
+          </button>
+          <button
+            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            @click="page = page + 1"
+            :disabled="!hasNextPage"
+            :class="{ disabled: !hasNextPage }"
+          >
+            Вперед
+          </button>
           <div>Фильтр:<input v-model="filter" /></div>
         </div>
         <hr class="w-full border-t border-gray-600 my-4" />
@@ -257,9 +267,22 @@ export default {
       graph: [],
       page: 1,
       filter: "",
+      hasNextPage: true,
     };
   },
   created() {
+    const windowData = Object.fromEntries(
+      new URL(window.location).searchParams.entries(),
+    );
+
+    if (windowData.filter) {
+      this.filter = windowData.filter;
+    }
+
+    if (windowData.page) {
+      this.page = windowData.page;
+    }
+
     const tickersData = localStorage.getItem("cryptonomicon-list");
 
     if (tickersData) {
@@ -273,12 +296,16 @@ export default {
     filteredTickers() {
       const start = (this.page - 1) * 6;
       const end = this.page * 6;
-      return this.tickers.filter((ticker) => ticker.name.includes(this.filter)).slice(start, end);
+      const filteredTickers = this.tickers.filter((ticker) =>
+        ticker.name.includes(this.filter),
+      );
+      this.hasNextPage = filteredTickers.length > end;
+      return filteredTickers.slice(start, end);
     },
     subscribeToUpdates(tickerName) {
       setInterval(async () => {
         const f = await fetch(
-            `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=da66cc48475bafa08ff8d4e84fdf6717916f47578b454b98a9f6d0c82138f326`,
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=da66cc48475bafa08ff8d4e84fdf6717916f47578b454b98a9f6d0c82138f326`,
         );
         const data = await f.json();
         this.tickers.find((t) => t.name === tickerName).price = data.USD;
@@ -286,6 +313,7 @@ export default {
           this.graph.push(data.USD);
         }
       }, 3000);
+      this.ticker = "";
     },
     add() {
       const newTicker = {
@@ -297,21 +325,23 @@ export default {
 
       localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
       this.subscribeToUpdates(newTicker.name);
-      this.ticker = "";
     },
-    addSearch() {
+    /*addSearch() {
       setInterval(async () => {
-        /*const f = await fetch(
+        /!*const f = await fetch(
             `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`
-        );*/
+        );*!/
         // const data = await f.json();
       }, 3000);
-    },
+    },*/
     handleDelete(idx, t) {
       this.tickers.splice(idx, 1);
-      if (this.sel == t) {
+      if (this.sel === t) {
         this.sel = null;
       }
+      let tickersData = JSON.parse(localStorage.getItem("cryptonomicon-list"));
+      tickersData.splice(idx, 1);
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(tickersData));
     },
     normalizeGraph() {
       const maxValue = Math.max(...this.graph);
@@ -325,5 +355,30 @@ export default {
       this.sel = t;
     },
   },
+  computed: {},
+  watch: {
+    filter() {
+      this.page = 1;
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`,
+      );
+    },
+    page() {
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`,
+      );
+    },
+  },
 };
 </script>
+
+<style>
+.disabled {
+  background-color: #7da0b1 !important;
+  cursor: none;
+}
+</style>
