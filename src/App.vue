@@ -22,23 +22,23 @@
                 placeholder="Например DOGE"
                 v-model="ticker"
                 @keyup.enter="add"
+                @input="getAllData(ticker), tickerValidateInput()"
               />
             </div>
-            <!--            <div class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
-            <span class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              BTC
-            </span>
-              <span class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              DOGE
-            </span>
-              <span class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              BCH
-            </span>
-              <span class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              CHD
-            </span>
+            <div class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
+                 v-if="searchTickers.length"
+            >
+              <span class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
+                v-for="(t, idx) in searchTickers[0].slice(0, 4)"
+                :key="idx"
+                @click="tickerValidateSearch(idx), addSearchTicker(idx)"
+              >
+                {{ t }}
+              </span>
             </div>
-            <div class="text-sm text-red-600">Такой тикер уже добавлен</div>-->
+            <div class="text-sm text-red-600" v-if="ifHasTicker">
+              Такой тикер уже добавлен
+            </div>
           </div>
         </div>
         <button
@@ -268,6 +268,8 @@ export default {
       page: 1,
       filter: "",
       hasNextPage: true,
+      ifHasTicker: false,
+      searchTickers: [],
     };
   },
   created() {
@@ -293,6 +295,22 @@ export default {
     }
   },
   methods: {
+    tickerValidateInput() {
+      this.ifHasTicker = false;
+      this.tickers.forEach((item) => {
+        if (item.name === this.ticker) {
+          this.ifHasTicker = true;
+        }
+      });
+    },
+    tickerValidateSearch(i) {
+      this.ifHasTicker = false;
+      this.tickers.forEach((item) => {
+        if (item.name === this.searchTickers[0][i]) {
+          this.ifHasTicker = true;
+        }
+      });
+    },
     filteredTickers() {
       const start = (this.page - 1) * 6;
       const end = this.page * 6;
@@ -313,27 +331,44 @@ export default {
           this.graph.push(data.USD);
         }
       }, 3000);
-      this.ticker = "";
+    },
+    async getAllData(tickerSymbol) {
+      this.searchTickers = [];
+      const f = await fetch(
+        `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`,
+      );
+      const data = await f.json();
+      this.searchTickers.push(Object.keys(data.Data).filter(t => t.indexOf(tickerSymbol) === 0));
     },
     add() {
       const newTicker = {
         name: this.ticker,
         price: "-",
       };
-      this.tickers.push(newTicker);
+      if (!this.ifHasTicker) {
+        this.tickers.push(newTicker);
+      }
       this.filter = "";
 
       localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
       this.subscribeToUpdates(newTicker.name);
+      this.ticker = "";
     },
-    /*addSearch() {
-      setInterval(async () => {
-        /!*const f = await fetch(
-            `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`
-        );*!/
-        // const data = await f.json();
-      }, 3000);
-    },*/
+    addSearchTicker(i) {
+      const newTicker = {
+        name: this.searchTickers[0][i],
+        price: "-",
+      };
+      if (!this.ifHasTicker) {
+        this.tickers.push(newTicker);
+      }
+      this.filter = "";
+
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
+      this.subscribeToUpdates(newTicker.name);
+      this.ticker = "";
+    },
+
     handleDelete(idx, t) {
       this.tickers.splice(idx, 1);
       if (this.sel === t) {
@@ -373,13 +408,13 @@ export default {
       );
     },
   },
+  mounted() {},
 };
 </script>
 
 <style>
 .disabled {
   background-color: #7da0b1 !important;
-  cursor: none;
+  cursor: no-drop;
 }
-
 </style>
