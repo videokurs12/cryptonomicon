@@ -25,10 +25,12 @@
                 @input="getAllData(ticker), tickerValidateInput()"
               />
             </div>
-            <div class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
-                 v-if="searchTickers.length"
+            <div
+              class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
+              v-if="searchTickers.length"
             >
-              <span class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
+              <span
+                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
                 v-for="(t, idx) in searchTickers[0].slice(0, 4)"
                 :key="idx"
                 @click="tickerValidateSearch(idx), addSearchTicker(idx)"
@@ -88,10 +90,10 @@
           <div
             class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
             :class="{
-              'border-4': sel === t,
+              'border-4': selectedTicker === t,
             }"
-            v-for="(t, idx) in filteredTickers()"
-            v-bind:key="t.name"
+            v-for="(t, idx) in paginatedTickers"
+            v-bind:key="idx"
             @click="select(t)"
           >
             <div class="px-4 py-5 sm:p-6 text-center">
@@ -105,7 +107,7 @@
             <div class="w-full border-t border-gray-200"></div>
             <button
               class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
-              @click.stop="handleDelete(idx, t)"
+              @click.stop="handleDelete(t)"
             >
               <svg
                 class="h-5 w-5"
@@ -212,14 +214,14 @@
         </dl>
         <hr class="w-full border-t border-gray-600 my-4" />
       </template>
-      <section class="relative" v-if="sel">
+      <section class="relative" v-if="selectedTicker">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-          {{ sel.name }} - USD
+          {{ selectedTicker.name }} - USD
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
           <div
             class="bg-purple-800 border w-10"
-            v-for="(bar, idx) in normalizeGraph()"
+            v-for="(bar, idx) in normalizedGraph"
             :key="idx"
             :style="{ height: `${bar}%` }"
           ></div>
@@ -227,7 +229,7 @@
         <button
           type="button"
           class="absolute top-0 right-0"
-          @click="sel = null"
+          @click="selectedTicker = null"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -263,11 +265,10 @@ export default {
     return {
       ticker: "",
       tickers: [],
-      sel: null,
+      selectedTicker: null,
       graph: [],
       page: 1,
       filter: "",
-      hasNextPage: true,
       ifHasTicker: false,
       searchTickers: [],
     };
@@ -277,13 +278,21 @@ export default {
       new URL(window.location).searchParams.entries(),
     );
 
-    if (windowData.filter) {
-      this.filter = windowData.filter;
-    }
+    const VALID_KEYS = ["filter", "page"];
 
-    if (windowData.page) {
-      this.page = windowData.page;
-    }
+    VALID_KEYS.forEach(key => {
+      if (windowData[key]) {
+        this[key] = windowData[key];
+      }
+    });
+
+    // if (windowData.filter) {
+    //   this.filter = windowData.filter;
+    // }
+
+    // if (windowData.page) {
+    //   this.page = windowData.page;
+    // }
 
     const tickersData = localStorage.getItem("cryptonomicon-list");
 
@@ -311,15 +320,6 @@ export default {
         }
       });
     },
-    filteredTickers() {
-      const start = (this.page - 1) * 6;
-      const end = this.page * 6;
-      const filteredTickers = this.tickers.filter((ticker) =>
-        ticker.name.includes(this.filter),
-      );
-      this.hasNextPage = filteredTickers.length > end;
-      return filteredTickers.slice(start, end);
-    },
     subscribeToUpdates(tickerName) {
       setInterval(async () => {
         const f = await fetch(
@@ -327,7 +327,7 @@ export default {
         );
         const data = await f.json();
         this.tickers.find((t) => t.name === tickerName).price = data.USD;
-        if (this.sel?.name === tickerName) {
+        if (this.selectedTicker?.name === tickerName) {
           this.graph.push(data.USD);
         }
       }, 3000);
@@ -338,19 +338,21 @@ export default {
         `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`,
       );
       const data = await f.json();
-      this.searchTickers.push(Object.keys(data.Data).filter(t => t.indexOf(tickerSymbol) === 0));
+      this.searchTickers.push(
+        Object.keys(data.Data).filter((t) => t.indexOf(tickerSymbol) === 0),
+      );
     },
+
     add() {
       const newTicker = {
         name: this.ticker,
         price: "-",
       };
       if (!this.ifHasTicker) {
-        this.tickers.push(newTicker);
+        this.tickers = [...this.tickers, newTicker];
       }
       this.filter = "";
 
-      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
       this.subscribeToUpdates(newTicker.name);
       this.ticker = "";
     },
@@ -360,51 +362,91 @@ export default {
         price: "-",
       };
       if (!this.ifHasTicker) {
-        this.tickers.push(newTicker);
+        this.tickers = [...this.tickers, newTicker];
       }
       this.filter = "";
 
-      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
       this.subscribeToUpdates(newTicker.name);
       this.ticker = "";
     },
 
-    handleDelete(idx, t) {
-      this.tickers.splice(idx, 1);
-      if (this.sel === t) {
-        this.sel = null;
+    handleDelete(tickerToRemove) {
+      this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
+      if (this.selectedTicker === tickerToRemove) {
+        this.selectedTicker = null;
       }
-      let tickersData = JSON.parse(localStorage.getItem("cryptonomicon-list"));
+      /*let tickersData = JSON.parse(localStorage.getItem("cryptonomicon-list"));
       tickersData.splice(idx, 1);
-      localStorage.setItem("cryptonomicon-list", JSON.stringify(tickersData));
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(tickersData));*/
     },
-    normalizeGraph() {
+
+    select(t) {
+      this.selectedTicker = t;
+    },
+  },
+  computed: {
+    startIndex() {
+      return (this.page - 1) * 6;
+    },
+
+    endIndex() {
+      return this.page * 6;
+    },
+
+    filteredTickers() {
+      return this.tickers.filter((ticker) => ticker.name.includes(this.filter));
+    },
+
+    paginatedTickers() {
+      return this.filteredTickers.slice(this.startIndex, this.endIndex);
+    },
+
+    hasNextPage() {
+      return this.filteredTickers.length > this.endIndex;
+    },
+
+    normalizedGraph() {
       const maxValue = Math.max(...this.graph);
       const minValue = Math.min(...this.graph);
+      if (maxValue === minValue) {
+        return this.graph.map(() => 50);
+      }
       return this.graph.map(
         (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue),
       );
     },
-    select(t) {
-      this.graph = [];
-      this.sel = t;
+
+    pageStateOptions() {
+      return {
+        filter: this.filter,
+        page: this.page,
+      };
     },
   },
-  computed: {},
   watch: {
+    selectedTicker() {
+      this.graph = [];
+    },
+
+    tickers() {
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
+    },
+
+    paginatedTickers() {
+      if (this.paginatedTickers.length === 0 && this.page > 1) {
+        this.page -= 1;
+      }
+    },
+
     filter() {
       this.page = 1;
-      window.history.pushState(
-        null,
-        document.title,
-        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`,
-      );
     },
-    page() {
+
+    pageStateOptions(v) {
       window.history.pushState(
         null,
         document.title,
-        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`,
+        `${window.location.pathname}?filter=${v.filter}&page=${v.page}`,
       );
     },
   },
