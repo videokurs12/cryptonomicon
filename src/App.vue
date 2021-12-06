@@ -22,23 +22,25 @@
                 placeholder="Например DOGE"
                 v-model="ticker"
                 @keyup.enter="add"
-                @input="getAllData(ticker), tickerValidateInput()"
+                @input="getAutocompleteTickers(ticker), validateInputTicker()"
               />
             </div>
             <div
               class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
-              v-if="searchTickers.length"
+              v-if="autocompleteTickers.length"
             >
               <span
                 class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-                v-for="(t, idx) in searchTickers[0].slice(0, 4)"
+                v-for="(t, idx) in autocompleteTickers[0].slice(0, 4)"
                 :key="idx"
-                @click="tickerValidateSearch(idx), addSearchTicker(idx)"
+                @click="
+                  validateAutocompleteTicker(idx), addAutocompleteTicker(idx)
+                "
               >
                 {{ t }}
               </span>
             </div>
-            <div class="text-sm text-red-600" v-if="ifHasTicker">
+            <div class="text-sm text-red-600" v-if="hasTicker">
               Такой тикер уже добавлен
             </div>
           </div>
@@ -100,8 +102,14 @@
               <dt class="text-sm font-medium text-gray-500 truncate">
                 {{ t.name }} - USD
               </dt>
-              <dd class="mt-1 text-3xl font-semibold text-gray-900">
+              <dd
+                class="mt-1 text-3xl font-semibold text-gray-900"
+                v-if="t.price"
+              >
                 {{ t.price }}
+              </dd>
+              <dd class="mt-1 text-3xl font-semibold text-gray-900" v-else>
+                {{ "Data Loading..." }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -259,6 +267,11 @@
 </template>
 
 <script>
+import {
+  loadAllTickers,
+  subscribeToTicker,
+  unsubscribeFromTicker,
+} from "./api";
 export default {
   name: "App",
   data() {
@@ -269,8 +282,8 @@ export default {
       graph: [],
       page: 1,
       filter: "",
-      ifHasTicker: false,
-      searchTickers: [],
+      hasTicker: false,
+      autocompleteTickers: [],
     };
   },
   created() {
@@ -280,7 +293,7 @@ export default {
 
     const VALID_KEYS = ["filter", "page"];
 
-    VALID_KEYS.forEach(key => {
+    VALID_KEYS.forEach((key) => {
       if (windowData[key]) {
         this[key] = windowData[key];
       }
@@ -299,48 +312,71 @@ export default {
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
       this.tickers.forEach((ticker) => {
-        this.subscribeToUpdates(ticker.name);
+        subscribeToTicker(ticker.name, (newPrice) =>
+          this.updateTicker(ticker.name, newPrice),
+        );
       });
     }
+    setInterval(this.updateTickers, 3000);
   },
   methods: {
-    tickerValidateInput() {
-      this.ifHasTicker = false;
+    updateTicker(tickerName, price) {
+      this.tickers
+        .filter((t) => t.name === tickerName)
+        .forEach((t) => {
+          if (t === this.selectedTicker) {
+            this.graph.push(price);
+          }
+          t.price = price;
+        });
+    },
+
+    validateInputTicker() {
+      this.hasTicker = false;
       this.tickers.forEach((item) => {
         if (item.name === this.ticker) {
-          this.ifHasTicker = true;
+          this.hasTicker = true;
         }
       });
     },
-    tickerValidateSearch(i) {
-      this.ifHasTicker = false;
+
+    validateAutocompleteTicker(i) {
+      this.hasTicker = false;
       this.tickers.forEach((item) => {
-        if (item.name === this.searchTickers[0][i]) {
-          this.ifHasTicker = true;
+        if (item.name === this.autocompleteTickers[0][i]) {
+          this.hasTicker = true;
         }
       });
     },
-    subscribeToUpdates(tickerName) {
-      setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=da66cc48475bafa08ff8d4e84fdf6717916f47578b454b98a9f6d0c82138f326`,
-        );
-        const data = await f.json();
-        this.tickers.find((t) => t.name === tickerName).price = data.USD;
-        if (this.selectedTicker?.name === tickerName) {
-          this.graph.push(data.USD);
-        }
-      }, 3000);
+
+    async getAutocompleteTickers(tickerSymbol) {
+      this.autocompleteTickers = [];
+      const allAutocompleteTickers = await loadAllTickers();
+      this.autocompleteTickers.push(
+        Object.keys(allAutocompleteTickers.Data).filter(
+          (t) => t.indexOf(tickerSymbol) === 0,
+        ),
+      );
     },
-    async getAllData(tickerSymbol) {
-      this.searchTickers = [];
-      const f = await fetch(
-        `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`,
-      );
-      const data = await f.json();
-      this.searchTickers.push(
-        Object.keys(data.Data).filter((t) => t.indexOf(tickerSymbol) === 0),
-      );
+
+    formatPrice(price) {
+      if (price === "-") {
+        return price;
+      }
+      return price > 1 ? price.toFixed(2) : price.toPrecision(4);
+    },
+
+    async updateTickers() {
+      // if (!this.tickers.length) {
+      //   return;
+      // }
+      // const exchangeData = await loadTickers(this.tickers.map((t) => t.name));
+      //
+      // this.tickers.forEach((ticker) => {
+      //   const price = exchangeData[ticker.name.toUpperCase()];
+      //
+      //   ticker.price = price ?? "-";
+      // });
     },
 
     add() {
@@ -348,26 +384,29 @@ export default {
         name: this.ticker,
         price: "-",
       };
-      if (!this.ifHasTicker) {
+      if (!this.hasTicker) {
         this.tickers = [...this.tickers, newTicker];
       }
       this.filter = "";
-
-      this.subscribeToUpdates(newTicker.name);
       this.ticker = "";
+      subscribeToTicker(newTicker.name, (newPrice) =>
+        this.updateTicker(newTicker.name, newPrice),
+      );
     },
-    addSearchTicker(i) {
+
+    addAutocompleteTicker(i) {
       const newTicker = {
-        name: this.searchTickers[0][i],
+        name: this.autocompleteTickers[0][i],
         price: "-",
       };
-      if (!this.ifHasTicker) {
+      if (!this.hasTicker) {
         this.tickers = [...this.tickers, newTicker];
       }
       this.filter = "";
-
-      this.subscribeToUpdates(newTicker.name);
       this.ticker = "";
+      subscribeToTicker(newTicker.name, (newPrice) =>
+        this.updateTicker(newTicker.name, newPrice),
+      );
     },
 
     handleDelete(tickerToRemove) {
@@ -375,6 +414,7 @@ export default {
       if (this.selectedTicker === tickerToRemove) {
         this.selectedTicker = null;
       }
+      unsubscribeFromTicker(tickerToRemove.name);
       /*let tickersData = JSON.parse(localStorage.getItem("cryptonomicon-list"));
       tickersData.splice(idx, 1);
       localStorage.setItem("cryptonomicon-list", JSON.stringify(tickersData));*/
